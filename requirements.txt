@@ -1,4 +1,5 @@
-pypdf>=5.0.0
-requests>=2.31.0
-tqdm>=4.66.0
-json-repair>=0.30.0
+# For bit-for-bit reproducibility, install once then: pip freeze > requirements.lock.txt
+pypdf>=5.0.0,<6
+requests>=2.31.0,<3
+tqdm>=4.66.0,<5
+json-repair>=0.30.0,<1

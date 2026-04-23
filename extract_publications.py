@@ -13,9 +13,11 @@ Usage:
 phase (startup, discovery, per-PDF read/API/save), plus a tqdm bar. Use ``--quiet`` /
 ``-q`` only if you want minimal output.
 
-OpenRouter uses a **read timeout** (default 600s) and a short connect timeout; every 25s a
-``still waiting`` line is printed unless ``--no-wait-hints`` is set. Override with
-``--timeout SEC``.
+OpenRouter uses a **read timeout** (default 10s; use ``--timeout`` if responses need more time) and a short connect timeout;
+every 25s a ``still waiting`` line is printed unless ``--no-wait-hints`` is set.
+
+**Privacy:** the full extracted paper text (up to a character cap) is sent to OpenRouter. Do not use
+on PDFs you are not allowed to send to a third party.
 """
 
 from __future__ import annotations
@@ -49,7 +51,11 @@ def load_env_file(path: Path) -> None:
             if not line or line.startswith("#") or "=" not in line:
                 continue
             key, _, value = line.partition("=")
-            os.environ.setdefault(key.strip(), value.strip())
+            k = key.strip()
+            v = value.strip()
+            if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+                v = v[1:-1]
+            os.environ.setdefault(k, v)
 
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -57,7 +63,8 @@ DEFAULT_MODEL = "openai/gpt-oss-120b"
 MAX_TEXT_CHARS = 140_000
 # TCP/handshake limit (seconds); read timeout is separate (see openrouter_extract).
 CONNECT_TIMEOUT_S = 30
-DEFAULT_READ_TIMEOUT_S = 2
+# Read timeout for each HTTP response (increase with --timeout if the model or network is slow).
+DEFAULT_READ_TIMEOUT_S = 10
 WAIT_HINT_INTERVAL_S = 25.0
 
 
@@ -131,6 +138,36 @@ EXTRACTION_JSON_SCHEMA: dict[str, Any] = {
 def default_pdf_dir() -> Path:
     """Default folder for PDFs: ``.librarian/data`` (next to this script)."""
     return Path(__file__).resolve().parent / "data"
+
+
+def safe_pdf_path(root: Path, source_pdf: str) -> Path:
+    """Join *source_pdf* under *root*; reject absolute paths and ``..`` escapes."""
+    s = (source_pdf or "").strip()
+    if not s:
+        raise ValueError("empty source_pdf")
+    p = Path(s)
+    if p.is_absolute():
+        raise ValueError("source_pdf must be a relative path under the PDF root")
+    root_r = root.resolve()
+    candidate = (root_r / s).resolve()
+    if not candidate.is_relative_to(root_r):
+        raise ValueError("source_pdf path resolves outside the PDF root")
+    return candidate
+
+
+def _http_err_snippet(text: str | None, limit: int = 500) -> str:
+    t = (text or "").replace("\n", " ").replace("\r", " ").strip()
+    if not t:
+        return ""
+    return t[:limit] + ("…" if len(t) > limit else "")
+
+
+def _safe_log_payload(obj: object, limit: int = 800) -> str:
+    try:
+        s = json.dumps(obj, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        s = repr(obj)
+    return s[:limit] + ("…" if len(s) > limit else "")
 
 
 def extract_first_json_object(text: str) -> str | None:
@@ -301,17 +338,18 @@ def openrouter_extract(
             used_json_object_fallback = True
             r = requests.post(OPENROUTER_URL, headers=headers, json=body, timeout=req_timeout)
         if r.status_code >= 400:
+            snip = _http_err_snippet(r.text, 500)
             raise RuntimeError(
-                f"OpenRouter error {r.status_code}: {r.text[:2000]}"
+                f"OpenRouter error {r.status_code}" + (f": {snip}" if snip else "")
             )
 
     data = r.json()
     choices = data.get("choices") or []
     if not choices:
-        raise RuntimeError(f"OpenRouter returned no choices: {data!r}")
+        raise RuntimeError(f"OpenRouter returned no choices: {_safe_log_payload(data)}")
     content = (choices[0].get("message") or {}).get("content")
     if not content:
-        raise RuntimeError(f"Empty model content: {data!r}")
+        raise RuntimeError(f"Empty model content: {_safe_log_payload(data)}")
 
     try:
         parsed = parse_llm_json_response(content)

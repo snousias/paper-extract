@@ -28,18 +28,7 @@ _LIB = Path(__file__).resolve().parent
 if str(_LIB) not in sys.path:
     sys.path.insert(0, str(_LIB))
 
-
-def load_env_file(path: Path) -> None:
-    """Load KEY=VALUE pairs from a .env file into os.environ (no-op if file missing)."""
-    if not path.is_file():
-        return
-    with path.open(encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            os.environ.setdefault(key.strip(), value.strip())
+from extract_publications import load_env_file  # noqa: E402
 
 
 def is_failed_record(r: object) -> bool:
@@ -164,6 +153,7 @@ def main() -> int:
         default_pdf_dir,
         extract_pdf_text,
         openrouter_extract,
+        safe_pdf_path,
     )
 
     read_timeout = (
@@ -188,8 +178,17 @@ def main() -> int:
         attempted += 1
         old = records[idx]
         key = str(old["source_pdf"])
-        pdf_path = root / key
         log(f"\n[{attempted}/{len(indices)}] Retrying: {key}")
+
+        try:
+            pdf_path = safe_pdf_path(root, key)
+        except ValueError as e:
+            err = f"invalid_path: {e}"
+            log(f"  [err] {err}")
+            records[idx] = {"source_pdf": key, "error": err}
+            save_records(jpath, records)
+            time.sleep(args.sleep)
+            continue
 
         if not pdf_path.is_file():
             err = f"PDF not found under root: {pdf_path}"

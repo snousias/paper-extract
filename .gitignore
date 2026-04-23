@@ -3,8 +3,10 @@
 *.env
 
 # Extraction output (may contain private research data)
+output/publications_extractions.json
+output/*.json
+# Legacy output path (if used)
 publications_extractions.json
-*.json
 
 # Python
 __pycache__/

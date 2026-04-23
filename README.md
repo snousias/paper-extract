@@ -41,6 +41,10 @@ If you keep PDFs somewhere else, pass `--dir` / PowerShell `-Dir` to point at th
 4. Appends each result to the output JSON, writing after every paper.
 5. Failures are stored with an `source_pdf` + `error` stub; re-run with `extract_failed_cases.py` when you want to retry them.
 
+### Privacy and third parties
+
+The **full extracted text** of each PDF (up to a character cap) is sent to [OpenRouter](https://openrouter.ai/) and processed by the model you select. Do not run this on PDFs you may not lawfully or contractually send to an external API. The API key is read from the environment (see [Defaults](#defaults)); it is not written into the output JSON.
+
 ---
 
 ## Setup
@@ -119,7 +123,7 @@ Optional helpers (identical to `python extract_publications.py …`): `run_extra
 | `--limit N` | 0 (no limit) | Max PDFs this run. |
 | `--skip-existing` | off | Skip PDFs whose `source_pdf` is already in the output. |
 | `--sleep SEC` | 1.0 | Pause between API calls. |
-| `--timeout SEC` | 2 | HTTP read timeout for each OpenRouter response. |
+| `--timeout SEC` | 10 | HTTP read timeout (seconds) for each OpenRouter response; increase if you see read timeouts. |
 | `--no-wait-hints` | off | No periodic “still waiting” lines on long calls. |
 | `--env-file PATH` | `.librarian/.env` | Env file to load. |
 | `-q` / `--quiet` | off | Minimal output. |
@@ -128,7 +132,7 @@ Optional helpers (identical to `python extract_publications.py …`): `run_extra
 
 ## Retry failed cases
 
-`extract_failed_cases.py` reads the same JSON as the main extractor. It only retries items that have both `source_pdf` and `error`. Successful rows are left unchanged. By default, PDFs are resolved under **`.librarian/data`** unless you pass `--dir`.
+`extract_failed_cases.py` reads the same JSON as the main extractor. It only retries items that have both `source_pdf` and `error`. Successful rows are left unchanged. By default, PDFs are resolved under **`.librarian/data`** unless you pass `--dir`. Each `source_pdf` is joined to that directory in a **safe** way: absolute paths and paths that escape the directory with `..` are rejected and recorded as `invalid_path` errors.
 
 ```bash
 cd .librarian
@@ -201,11 +205,6 @@ The file is written after every paper, so it stays valid JSON if you interrupt t
 
 ## Dependencies
 
-```
-pypdf>=5.0.0
-requests>=2.31.0
-tqdm>=4.66.0
-json-repair>=0.30.0
-```
+See `requirements.txt` (upper bounds on major versions; for a full lock file run `python -m pip install -r requirements.txt` on a good machine, then `pip freeze > requirements.lock.txt`).
 
 `json-repair` helps when the model returns slightly malformed JSON.
