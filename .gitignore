@@ -1,0 +1,15 @@
+# Credentials
+.env
+*.env
+
+# Extraction output (may contain private research data)
+publications_extractions.json
+*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Temp files written by editor/tools
+*.tmp.*
